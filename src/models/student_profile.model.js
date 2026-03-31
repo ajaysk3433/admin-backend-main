@@ -11,7 +11,6 @@ export default sequelize.define("StudentProfile", {
     dob: DataTypes.DATE,
     gender: DataTypes.ENUM("male","female","other"),
     analytics_enabled: DataTypes.BOOLEAN,
-    status: DataTypes.ENUM("active","inactive","suspended","blocked")
 },{
     tableName: "student_profiles",
     underscored: true,

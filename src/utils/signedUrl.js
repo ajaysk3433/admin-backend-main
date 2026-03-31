@@ -11,6 +11,7 @@ const s3 = new S3Client({
 });
 
 export const getSignedPdfUrl = async (key) => {
+    if(key===null) return null;
     const command = new GetObjectCommand({
         Bucket: process.env.AWS_S3_BUCKET,
         Key: key,

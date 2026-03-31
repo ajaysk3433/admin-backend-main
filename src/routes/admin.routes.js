@@ -3,11 +3,13 @@ import {
     updateSchool,
     getAllRoles,
     createRole,
+    editProfile,
     getAllPermissions,
     createPermission,
     assignPermissionsToRole,
     changeUserRole,
-    getRolesWithPermissions
+    getRolesWithPermissions,
+    changeStatus
 } from "../controllers/admin.controller.js";
 
 import { authMiddleware } from "../middlewares/auth.middleware.js";
@@ -21,6 +23,14 @@ router.put(
     authMiddleware,
     requirePermission("MANAGE_SCHOOL"),
     updateSchool
+);
+
+/* PROFILE EDITING */
+router.put(
+    "/edit-profile",
+    authMiddleware,
+    requirePermission("MANAGE_SCHOOL"),
+    editProfile
 );
 
 /* ROLE MANAGEMENT */
@@ -75,6 +85,14 @@ router.get(
     authMiddleware,
     requirePermission("MANAGE_ROLES"),
     getRolesWithPermissions
+);
+
+/* CHANGE USER STATUS */
+router.put(
+    "/users/change-status",
+    authMiddleware,
+    requirePermission("MANAGE_SCHOOL"),
+    changeStatus
 );
 
 export default router;

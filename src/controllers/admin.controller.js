@@ -1,9 +1,11 @@
-import AdminUser from "../models/admin_user.model.js";
+import User from "../models/user.model.js";
 import AdminSchool from "../models/admin_school.model.js";
 import AdminRole from "../models/admin_role.model.js";
 import AdminPermission from "../models/admin_permission.model.js";
 import AdminRolePermission from "../models/admin_role_permission.model.js";
-
+import StudentProfile from "../models/student_profile.model.js";
+import ParentProfile from "../models/parent_profile.model.js";
+import TeacherProfile from "../models/teacher_profile.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -114,7 +116,7 @@ const changeUserRole = asyncHandler(async (req, res) => {
 
     if (!user_id || !role_id) throw new ApiError(400, "User and role required");
 
-    const user = await AdminUser.findOne({
+    const user = await User.findOne({
         where: { user_id },
     });
 
@@ -149,13 +151,182 @@ const getRolesWithPermissions = asyncHandler(async (req, res) => {
     );
 });
 
+// Edit user profile
+const editProfile = asyncHandler(async (req, res) => {
+    const { role } = req.user;
+
+    // 🔐 Only ADMIN / SUBADMIN allowed
+    if (!["ADMIN", "SUBADMIN"].includes(role)) {
+        throw new ApiError(403, "Access denied");
+    }
+
+    const { user_id, ...updates } = req.body;
+
+    if (!user_id) {
+        throw new ApiError(400, "user_id is required");
+    }
+
+    // 🔍 Get user
+    const user = await User.findOne({ where: { user_id } });
+    if (!user) throw new ApiError(404, "User not found");
+
+    // 🔍 Get role from DB (IMPORTANT)
+    const roleData = await AdminRole.findOne({
+        where: { role_id: user.role_id }
+    });
+
+    const userRole = roleData?.role_name;
+
+    let updatedData;
+
+    // ✅ 1. Update USER TABLE (common fields)
+    await user.update({
+        full_name: updates.full_name ?? user.full_name,
+        email: updates.email ?? user.email,
+        phone_number: updates.phone_number ?? user.phone_number,
+        status: updates.status ?? user.status
+    });
+
+    // 🔹 ADMIN / SUBADMIN → only user table
+    if (["ADMIN", "SUBADMIN"].includes(userRole)) {
+        updatedData = user;
+    }
+
+    // 🔹 STUDENT
+    else if (userRole === "STUDENT") {
+        const student = await StudentProfile.findOne({
+        where: { user_id }
+        });
+
+        if (!student) throw new ApiError(404, "Student not found");
+
+        await student.update({
+            preferred_language: updates.preferred_language ?? student.preferred_language,
+            dob: updates.dob ?? student.dob,
+            gender: updates.gender ?? student.gender,
+            analytics_enabled: updates.analytics_enabled ?? student.analytics_enabled,
+            status: updates.profile_status ?? student.status
+        });
+
+        updatedData = student;
+    }
+
+    // 🔹 TEACHER
+    else if (userRole === "TEACHER") {
+        const teacher = await TeacherProfile.findOne({
+        where: { user_id }
+        });
+
+        if (!teacher) throw new ApiError(404, "Teacher not found");
+
+        await teacher.update({
+        experience: updates.experience ?? teacher.experience,
+        age: updates.age ?? teacher.age,
+        device_type: updates.device_type ?? teacher.device_type,
+        cost_limit: updates.cost_limit ?? teacher.cost_limit,
+        status: updates.profile_status ?? teacher.status
+        });
+
+        updatedData = teacher;
+    }
+
+    // 🔹 PARENT
+    else if (userRole === "PARENT") {
+        const parent = await ParentProfile.findOne({
+        where: { user_id }
+        });
+
+        if (!parent) throw new ApiError(404, "Parent not found");
+
+        await parent.update({
+        parent_name: updates.parent_name ?? parent.parent_name,
+        relation: updates.relation ?? parent.relation,
+        status: updates.profile_status ?? parent.status
+        });
+
+        updatedData = parent;
+    }
+
+    else {
+        throw new ApiError(400, "Unsupported role");
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, updatedData, "Profile updated successfully")
+    );
+});
+
+const changeStatus = asyncHandler(async (req, res) => {
+    const { role } = req.user;
+
+    // 🔐 Only admin / subadmin
+    if (!["ADMIN"].includes(role)) {
+        throw new ApiError(403, "Access denied");
+    }
+
+    const { user_id, status } = req.body;
+
+    if (!user_id || !status) {
+        throw new ApiError(400, "user_id and status are required");
+    }
+
+    // 🔍 Find user
+    const user = await User.findOne({ where: { user_id } });
+    if (!user) throw new ApiError(404, "User not found");
+
+    // 🔍 Get role from DB (IMPORTANT)
+    const roleData = await AdminRole.findOne({
+        where: { role_id: user.role_id }
+    });
+
+    const userRole = roleData?.role_name;
+
+    // ✅ Update USER table
+    await user.update({ status });
+
+    // 🔹 STUDENT
+    if (userRole === "STUDENT") {
+        const student = await StudentProfile.findOne({ where: { user_id } });
+
+        if (student) {
+        await student.update({ status });
+        }
+    }
+
+    // 🔹 TEACHER
+    else if (userRole === "TEACHER") {
+        const teacher = await TeacherProfile.findOne({ where: { user_id } });
+
+        if (teacher) {
+        await teacher.update({ status });
+        }
+    }
+
+    // 🔹 PARENT
+    else if (userRole === "PARENT") {
+        const parent = await ParentProfile.findOne({ where: { user_id } });
+
+        if (parent) {
+        await parent.update({ status });
+        }
+    }
+
+    // 🔹 ADMIN / SUBADMIN → only user table (already updated)
+
+    return res.status(200).json(
+        new ApiResponse(200, {}, "User status updated successfully")
+    );
+});
+
 export {
     updateSchool,
     getAllRoles,
     createRole,
+    editProfile,
     getAllPermissions,
     createPermission,
     assignPermissionsToRole,
     changeUserRole,
     getRolesWithPermissions,
+    changeStatus
 };

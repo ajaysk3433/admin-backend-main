@@ -30,7 +30,7 @@ const AdminChapterMaster = sequelize.define("AdminChapterMaster", {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: "admin_subjects_master",
+      model: "admin_subjects",
       key: "subject_id"
     }
   },

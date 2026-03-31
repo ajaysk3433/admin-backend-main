@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createSection,
+  bulkCreateSections,
   getSectionsByClass,
   updateSection,
   deleteSection
@@ -21,6 +22,14 @@ router.post(
   authMiddleware,
   requirePermission("MANAGE_SCHOOL"),
   createSection
+);
+
+// Bulk create sections
+router.post(
+  "/sections/bulk",
+  authMiddleware,
+  requirePermission("MANAGE_SCHOOL"),
+  bulkCreateSections
 );
 
 // Get sections by class

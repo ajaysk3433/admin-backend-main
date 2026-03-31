@@ -1,110 +1,27 @@
 import sequelize from "../config/db.js";
 import AdminClass from "../models/admin_class.model.js";
-import AdminSubjectMaster from "../models/admin_subject_master.model.js";
-import AdminClassSubject from "../models/admin_class_subject.model.js";
+import AdminSubject from "../models/admin_subject_master.model.js";
 import AdminChapterMaster from "../models/admin_chapter_master.model.js";
 
-
 /* =====================================================
-    ADD SUBJECTS + CHAPTERS USING CLASS NAME
-   ===================================================== */
+   ADD SUBJECTS + CHAPTERS (class_id based)
+===================================================== */
 export const addSubjectsWithChapters = async (req, res) => {
-    const transaction = await sequelize.transaction();
+  const transaction = await sequelize.transaction();
 
-    try {
-        const { class_name, subjects } = req.body;
-
-        if (!class_name || !subjects?.length) {
-            return res.status(400).json({
-                success: false,
-                message: "class_name and subjects are required"
-            });
-        }
-
-        /* 1️⃣ Find Class by Name */
-        const classData = await AdminClass.findOne({
-            where: { class_name }
-        });
-
-        if (!classData) {
-            return res.status(404).json({
-                success: false,
-                message: "Class not found"
-            });
-        }
-
-        for (const subjectData of subjects) {
-
-        const { subject_name, chapters } = subjectData;
-
-        if (!subject_name || !chapters?.length) {
-            throw new Error("Each subject must have subject_name and chapters");
-        }
-
-        /* 2️⃣ Create or Find Subject */
-        let subject = await AdminSubjectMaster.findOne({
-            where: { subject_name }
-        });
-
-        if (!subject) {
-            subject = await AdminSubjectMaster.create(
-            { subject_name },
-            { transaction }
-            );
-        }
-
-        /* 3️⃣ Map Subject to Class */
-        const classSubject = await AdminClassSubject.create(
-            {
-            class_id: classData.class_id,
-            subject_id: subject.subject_id,
-            language: req.body.language || "English",
-            ai_enabled: false,
-            status: "active"
-            },
-            { transaction }
-        );
-
-        /* 4️⃣ Create Chapters */
-        const chapterPayload = chapters.map((chapterName, index) => ({
-            subject_id: subject.subject_id,
-            board_name: req.body.board_name,
-            class_id: classData.class_id,
-            language: req.body.language || "English",
-            chapter_name: chapterName,
-            chapter_order: index + 1,
-            status: "active"
-        }));
-
-        await AdminChapterMaster.bulkCreate(chapterPayload, { transaction });
-        }
-
-        await transaction.commit();
-
-        return res.status(201).json({
-        success: true,
-        message: "Subjects and Chapters added successfully"
-        });
-
-    } catch (error) {
-        await transaction.rollback();
-        return res.status(500).json({
-        success: false,
-        message: error.message
-        });
-    }
-};
-
-/* =====================================================
-   GET SUBJECTS BY CLASS NAME
-   ===================================================== */
-export const getSubjectsByClassName = async (req, res) => {
   try {
-    const { class_name } = req.params;
+    const { class_id, board, language, subjects } = req.body;
 
-    const classData = await AdminClass.findOne({
-      where: { class_name }
-    });
+    if (!class_id || !board || !language || !subjects?.length) {
+      return res.status(400).json({
+        success: false,
+        message: "class_id, board, language and subjects required"
+      });
+    }
+
+    const classData = await AdminClass.findByPk(class_id);
+    console.log("Class Data:", classData);
+    
 
     if (!classData) {
       return res.status(404).json({
@@ -113,23 +30,73 @@ export const getSubjectsByClassName = async (req, res) => {
       });
     }
 
-    const subjects = await AdminClassSubject.findAll({
-      where: {
-        class_id: classData.class_id,
+    for (const subjectData of subjects) {
+      const { subject_name, chapters } = subjectData;
+
+      if (!subject_name || !chapters?.length) {
+        throw new Error("Each subject must have subject_name and chapters");
+      }
+
+      // ✅ create or find subject
+      let subject = await AdminSubject.findOne({
+        where: { class_id, board, language, subject_name }
+      });
+
+      if (!subject) {
+        subject = await AdminSubject.create(
+          { class_id, board, language, subject_name },
+          { transaction }
+        );
+      }
+
+      // ✅ create chapters
+      const chapterPayload = chapters.map((chapterName, index) => ({
+        subject_id: subject.subject_id,
+        class_id,
+        board_name: board,
+        language,
+        chapter_name: chapterName,
+        chapter_order: index + 1,
         status: "active"
-      },
-      include: [
-        {
-          model: AdminSubjectMaster,
-          as: "subject",
-          attributes: ["subject_id", "subject_name"]
-        }
-      ]
+      }));
+
+      await AdminChapterMaster.bulkCreate(chapterPayload, { transaction });
+    }
+
+    await transaction.commit();
+
+    return res.status(201).json({
+      success: true,
+      message: "Subjects and Chapters added successfully"
     });
+
+  } catch (error) {
+    await transaction.rollback();
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/* =====================================================
+   GET SUBJECTS (class + board + language)
+===================================================== */
+export const getSubjects = async (req, res) => {
+  try {
+    const { class_id, board, language } = req.query;
+
+    const where = {};
+
+    if (class_id) where.class_id = class_id;
+    if (board) where.board = board;
+    if (language) where.language = language;
+
+    const subjects = await AdminSubject.findAll({ where });
 
     return res.status(200).json({
       success: true,
-      data: subjects.map(s => s.subject)
+      data: subjects
     });
 
   } catch (error) {
@@ -141,40 +108,15 @@ export const getSubjectsByClassName = async (req, res) => {
 };
 
 /* =====================================================
-   GET CHAPTERS BY CLASS NAME + SUBJECT
-   ===================================================== */
-export const getChaptersByClassAndSubject = async (req, res) => {
+   GET CHAPTERS (class_id + subject_id)
+===================================================== */
+export const getChapters = async (req, res) => {
   try {
-    const { class_name, subject_id } = req.params;
-
-    const classData = await AdminClass.findOne({
-      where: { class_name }
-    });
-
-    if (!classData) {
-      return res.status(404).json({
-        success: false,
-        message: "Class not found"
-      });
-    }
-
-    const mapping = await AdminClassSubject.findOne({
-      where: {
-        class_id: classData.class_id,
-        subject_id,
-        status: "active"
-      }
-    });
-
-    if (!mapping) {
-      return res.status(404).json({
-        success: false,
-        message: "Subject not mapped to this class"
-      });
-    }
+    const { class_id, subject_id } = req.params;
 
     const chapters = await AdminChapterMaster.findAll({
       where: {
+        class_id,
         subject_id,
         status: "active"
       },
@@ -194,105 +136,90 @@ export const getChaptersByClassAndSubject = async (req, res) => {
   }
 };
 
-/*  =====================================================
-    Update Subject Name (For Class)
-    ====================================================== */
-    export const updateSubjectName = async (req, res) => {
-    try {
-        const { subject_id } = req.params;
-        const { subject_name } = req.body;
+/* =====================================================
+   UPDATE SUBJECT
+===================================================== */
+export const updateSubjectName = async (req, res) => {
+  try {
+    const { subject_id } = req.params;
+    const { subject_name } = req.body;
 
-        if (!subject_name) {
-        return res.status(400).json({
-            success: false,
-            message: "subject_name is required"
-        });
-        }
-
-        const subject = await AdminSubjectMaster.findByPk(subject_id);
-
-        if (!subject) {
-        return res.status(404).json({
-            success: false,
-            message: "Subject not found"
-        });
-        }
-
-        subject.subject_name = subject_name;
-        await subject.save();
-
-        return res.status(200).json({
-        success: true,
-        message: "Subject updated successfully"
-        });
-
-    } catch (error) {
-        return res.status(500).json({
+    if (!subject_name) {
+      return res.status(400).json({
         success: false,
-        message: error.message
-        });
+        message: "subject_name is required"
+      });
     }
+
+    const subject = await AdminSubject.findByPk(subject_id);
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: "Subject not found"
+      });
+    }
+
+    subject.subject_name = subject_name;
+    await subject.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Subject updated successfully"
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 };
 
-/*  =====================================================
-    Delete Subject from Class 
-    ====================================================== */
-export const deleteSubjectFromClass = async (req, res) => {
-    const transaction = await sequelize.transaction();
+/* =====================================================
+   DELETE SUBJECT
+===================================================== */
+export const deleteSubject = async (req, res) => {
+  const transaction = await sequelize.transaction();
 
-    try {
-        const { class_name, subject_id } = req.params;
+  try {
+    const { subject_id } = req.params;
 
-        const classData = await AdminClass.findOne({
-        where: { class_name }
-        });
+    await AdminChapterMaster.destroy({
+      where: { subject_id },
+      transaction
+    });
 
-        if (!classData) {
-        return res.status(404).json({
-            success: false,
-            message: "Class not found"
-        });
-        }
+    await AdminSubject.destroy({
+      where: { subject_id },
+      transaction
+    });
 
-        // Delete class-subject mapping
-        await AdminClassSubject.destroy({
-        where: {
-            class_id: classData.class_id,
-            subject_id
-        },
-        transaction
-        });
+    await transaction.commit();
 
-        // Optional: Delete chapters
-        await AdminChapterMaster.destroy({
-        where: { subject_id },
-        transaction
-        });
+    return res.status(200).json({
+      success: true,
+      message: "Subject deleted successfully"
+    });
 
-        await transaction.commit();
-
-        return res.status(200).json({
-        success: true,
-        message: "Subject deleted from class"
-        });
-
-    } catch (error) {
-        await transaction.rollback();
-        return res.status(500).json({
-        success: false,
-        message: error.message
-        });
-    }
+  } catch (error) {
+    await transaction.rollback();
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 };
 
-/*  =====================================================
-    Add Chapters To Existing Subject
-    ====================================================== */
+/* =====================================================
+   ADD CHAPTERS
+===================================================== */
 export const addChaptersToSubject = async (req, res) => {
   try {
     const { subject_id } = req.params;
-    const { chapters } = req.body;
+    const { class_id, board, language, chapters } = req.body;
 
+    
     if (!chapters?.length) {
       return res.status(400).json({
         success: false,
@@ -300,14 +227,43 @@ export const addChaptersToSubject = async (req, res) => {
       });
     }
 
-    const chapterPayload = chapters.map((name, index) => ({
+    const classData = await AdminClass.findByPk(class_id);
+
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found"
+      });
+    }
+
+    const subject = await AdminSubject.findByPk(subject_id);
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: "Subject not found"
+      });
+    }
+
+    const existingChapters = await AdminChapterMaster.findAll({
+        where: { subject_id }
+      });
+
+      const existingNames = existingChapters.map(c => c.chapter_name);
+
+    const payload = chapters
+    .filter(name => !existingNames.includes(name))
+    .map((name, index) => ({
       subject_id,
-      chapter_name: name,
+      class_id: subject.class_id,
+      board_name: subject.board,
+      language: subject.language,
+      chapter_name: name.trim(),
       chapter_order: index + 1,
       status: "active"
     }));
 
-    await AdminChapterMaster.bulkCreate(chapterPayload);
+    await AdminChapterMaster.bulkCreate(payload);
 
     return res.status(201).json({
       success: true,
@@ -322,9 +278,9 @@ export const addChaptersToSubject = async (req, res) => {
   }
 };
 
-/*  =====================================================
-    Update Chapter
-    ====================================================== */
+/* =====================================================
+   UPDATE CHAPTER
+===================================================== */
 export const updateChapter = async (req, res) => {
   try {
     const { chapter_id } = req.params;
@@ -355,9 +311,9 @@ export const updateChapter = async (req, res) => {
   }
 };
 
-/*  =====================================================
-    Delete Chapter
-    ====================================================== */
+/* =====================================================
+   DELETE CHAPTER
+===================================================== */
 export const deleteChapter = async (req, res) => {
   try {
     const { chapter_id } = req.params;

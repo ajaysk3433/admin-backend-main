@@ -1,5 +1,7 @@
 import bcrypt from "bcrypt";
-import AdminUser from "../models/admin_user.model.js";
+import jwt from "jsonwebtoken";
+import fs from "fs";
+import User from "../models/user.model.js";
 import AdminSchool from "../models/admin_school.model.js";
 import StudentProfile from "../models/student_profile.model.js";
 import ParentProfile from "../models/parent_profile.model.js";
@@ -14,6 +16,8 @@ import AdminSection from "../models/admin_section.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { uploadAvatarToS3 } from "../utils/s3Upload.js";
+import { getSignedPdfUrl } from "../utils/signedUrl.js";
 
 import {
   generateAccessToken,
@@ -33,7 +37,7 @@ const sendLoginOtp = asyncHandler(async (req, res) => {
     if (!phone_number)
       throw new ApiError(400, "Phone number required");
 
-    const user = await AdminUser.findOne({ where: { phone_number } });
+    const user = await User.findOne({ where: { phone_number } });
     if (!user) throw new ApiError(404, "User not found");
 
     const otp = generateOTP();
@@ -61,7 +65,7 @@ const login = asyncHandler(async (req, res) => {
 
   /* PASSWORD LOGIN */
   if ((username || email) && password) {
-    user = await AdminUser.findOne({
+    user = await User.findOne({
       where: username ? { username } : { email }
     });
 
@@ -75,7 +79,7 @@ const login = asyncHandler(async (req, res) => {
   else if (phone_number && otp && otpToken) {
     verifyOtpToken(phone_number, otp, otpToken);
 
-    user = await AdminUser.findOne({ where: { phone_number } });
+    user = await User.findOne({ where: { phone_number } });
     if (!user) throw new ApiError(404, "User not found");
   }
 
@@ -83,11 +87,12 @@ const login = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid login payload");
   }
 
-  if (user.status !== "active")
-    throw new ApiError(403, "User inactive");
+  if (user.status.toLowerCase() !== "active") {
+  throw new ApiError(403, "User inactive");
+}
 
   /* LOAD ROLE + PERMISSIONS */
-  const userWithRole = await AdminUser.findOne({
+  const userWithRole = await User.findOne({
     where: { user_id: user.user_id },
     attributes: { exclude: ["password"] },
     include: [
@@ -143,6 +148,80 @@ const login = asyncHandler(async (req, res) => {
   );
 });
 
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken = req.cookies.refreshToken;
+  console.log("Cookies:", req.cookies);
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Refresh token missing");
+  }
+
+  console.log("Incoming token:", incomingRefreshToken);
+
+  try {
+    console.log("Hello ", incomingRefreshToken);
+    
+    // 1. Verify refresh token
+    const decoded = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    console.log("Decoded token:", decoded.user_id);
+    
+    // 2. Find user
+    const user = await User.findOne({
+      where: { user_id: decoded.user_id }
+    });
+
+    if (!user) {
+      throw new ApiError(401, "Invalid refresh token");
+    }
+
+    // 3. (IMPORTANT) Check token matches DB (if you store it)
+    // if (user.refresh_token !== incomingRefreshToken) {
+    //   throw new ApiError(401, "Refresh token expired or reused");
+    // }
+
+    // 4. Create payload (same as login)
+    const payload = {
+      user_id: user.user_id,
+      role: decoded.role,
+      permissions: decoded.permissions,
+      school_id: decoded.school_id
+    };
+
+    // 5. Generate new tokens (ROTATION 🔥)
+    const newAccessToken = generateAccessToken(payload);
+    const newRefreshToken = generateRefreshToken(payload);
+
+    // 6. Save new refresh token in DB (rotation)
+    await User.update(
+      { refresh_token: newRefreshToken },
+      { where: { user_id: user.user_id } }
+    );
+
+    // 7. Set new refresh token cookie
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    // 8. Send new access token
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        { accessToken: newAccessToken },
+        "Access token refreshed"
+      )
+    );
+
+  } catch (error) {
+    throw new ApiError(401, "Invalid or expired refresh token");
+  }
+});
 
 // LOGOUT
 const logout = asyncHandler(async (req, res) => {
@@ -167,7 +246,7 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
   // Admin and Subadmin
   if (["ADMIN", "SUBADMIN"].includes(role)) {
 
-    const user = await AdminUser.findOne({
+    const user = await User.findOne({
       where: { user_id },
       attributes: { exclude: ["password"] }
     });
@@ -180,10 +259,20 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
       });
     }
 
-    profileData = {
-      user,
-      school
-    };
+    if (user.avatar !== null) {
+      const avatarUrl = await getSignedPdfUrl(user?.avatar);
+
+      profileData = {
+        user,
+        school,
+        avatarUrl
+      };
+    } else {
+      profileData = {
+        user,
+        school
+      };
+    }
   }
 
   // Teacher
@@ -217,7 +306,7 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
       throw new ApiError(404, "Student profile not found");
 
 
-    const user = await AdminUser.findOne({
+    const user = await User.findOne({
       where: { user_id },
       attributes: ["full_name", "email", "phone_number", "role_id"]
     });
@@ -250,6 +339,7 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
       where: { section_id: classSection.section_id }
     });
 
+    const avatarUrl = await getSignedPdfUrl(user?.avatar);
 
     profileData = {
       school_name: school?.school_name,
@@ -271,7 +361,8 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
       language: student?.preferred_language,
       joining_date: student?.onboarding_date,
 
-      role: roleData?.role_name
+      role: roleData?.role_name,
+      avatar: avatarUrl
     };
   }
 
@@ -331,15 +422,48 @@ const getLoggedInUserProfile = asyncHandler(async (req, res) => {
   );
 });
 
-const editProfile = asyncHandler(async (req, res) => {
-  
-});
+const updateAvatar = asyncHandler(async (req, res) => {
+  const { user_id } = req.user;
 
+  // 1. Check file
+  if (!req.file) {
+    throw new ApiError(400, "Avatar file is required");
+  }
+
+  // 2. Validate file type (IMPORTANT 🔥)
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowedTypes.includes(req.file.mimetype)) {
+    throw new ApiError(400, "Only JPG, PNG, WEBP allowed");
+  }
+
+  // 3. Upload to S3
+  const { key } = await uploadAvatarToS3(req.file, user_id);
+  
+
+  // 4. Save key in DB
+  await User.update(
+    { avatar: key },
+    { where: { user_id } }
+  );
+
+  fs.unlinkSync(req.file.path);
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        avatar: key,
+      },
+      "Avatar updated successfully"
+    )
+  );
+});
 
 export {
   sendLoginOtp,
   login,
+  refreshAccessToken,
   logout,
-  getLoggedInUserProfile
+  getLoggedInUserProfile,
+  updateAvatar
 };
 

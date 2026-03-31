@@ -7,7 +7,6 @@ export default sequelize.define("ParentProfile", {
     school_id: DataTypes.BIGINT,
     parent_name: DataTypes.STRING,
     relation: DataTypes.ENUM("father","mother","guardian"),
-    status: DataTypes.ENUM("active","inactive","blocked")
 },{
     tableName: "parent_profiles",
     timestamps: false

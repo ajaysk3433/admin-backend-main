@@ -6,7 +6,7 @@ export default sequelize.define("TeacherClassSectionSubject", {
     teacher_id: DataTypes.BIGINT,
     class_id: DataTypes.INTEGER,
     section_id: DataTypes.INTEGER,
-    class_subject_id: DataTypes.BIGINT,
+    class_subject_id: DataTypes.INTEGER,
     academic_year: DataTypes.STRING
 },{
     tableName: "teacher_class_section_subject",

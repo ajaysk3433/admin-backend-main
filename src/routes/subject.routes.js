@@ -1,14 +1,14 @@
 import express from "express";
 
 import {
-    addSubjectsWithChapters,
-    getSubjectsByClassName,
-    getChaptersByClassAndSubject,
-    updateSubjectName,
-    deleteSubjectFromClass,
-    addChaptersToSubject,
-    updateChapter,
-    deleteChapter
+  addSubjectsWithChapters,
+  getSubjects,
+  getChapters,
+  updateSubjectName,
+  deleteSubject,
+  addChaptersToSubject,
+  updateChapter,
+  deleteChapter
 } from "../controllers/subject.controller.js";
 
 import { authMiddleware } from "../middlewares/auth.middleware.js";
@@ -17,90 +17,97 @@ import { requirePermission } from "../middlewares/permission.middleware.js";
 const router = express.Router();
 
 /* =====================================================
-   ADD MULTIPLE SUBJECTS + CHAPTERS USING CLASS NAME
+   ADD MULTIPLE SUBJECTS + CHAPTERS
    ===================================================== */
 router.post(
-    "/subjects",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    addSubjectsWithChapters
+  "/subjects",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  addSubjectsWithChapters
 );
 
 /* =====================================================
-   GET ALL SUBJECTS BY CLASS NAME
-   Example: /subjects/6
+   GET SUBJECTS
+   Example:
+   /subjects?class_id=1&board=CBSE&language=EN
    ===================================================== */
 router.get(
-    "/subjects/:class_name",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    getSubjectsByClassName
+  "/subjects",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  getSubjects
 );
 
 /* =====================================================
-   GET ALL CHAPTERS BY CLASS NAME + SUBJECT ID
-   Example: /subjects/6/chapters/3
+   GET CHAPTERS BY CLASS + SUBJECT
+   Example:
+   /subjects/1/chapters/3
    ===================================================== */
 router.get(
-    "/subjects/:class_name/chapters/:subject_id",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    getChaptersByClassAndSubject
+  "/subjects/:class_id/chapters/:subject_id",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  getChapters
 );
 
 /* =====================================================
    UPDATE SUBJECT NAME
-   Example: PUT /subjects/3
+   Example:
+   PUT /subjects/3
    ===================================================== */
 router.put(
-    "/subjects/:subject_id",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    updateSubjectName
+  "/subjects/:subject_id",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  updateSubjectName
 );
 
 /* =====================================================
-   DELETE SUBJECT FROM CLASS
-   Example: DELETE /subjects/6/3
+   DELETE SUBJECT
+   Example:
+   DELETE /subjects/3
    ===================================================== */
 router.delete(
-    "/subjects/:class_name/:subject_id",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    deleteSubjectFromClass
+  "/subjects/:subject_id",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  deleteSubject
 );
 
 /* =====================================================
    ADD CHAPTERS TO SUBJECT
-   Example: POST /subjects/3/chapters
+   Example:
+   POST /subjects/3/chapters
    ===================================================== */
 router.post(
-    "/subjects/:subject_id/chapters",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    addChaptersToSubject
+  "/subjects/:subject_id/chapters",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  addChaptersToSubject
 );
 
 /* =====================================================
    UPDATE CHAPTER
-   Example: PUT /chapters/10
+   Example:
+   PUT /chapters/10
    ===================================================== */
 router.put(
-    "/chapters/:chapter_id",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    updateChapter
+  "/chapters/:chapter_id",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  updateChapter
 );
 
 /* =====================================================
    DELETE CHAPTER
-   Example: DELETE /chapters/10
+   Example:
+   DELETE /chapters/10
    ===================================================== */
 router.delete(
-    "/chapters/:chapter_id",
-    // authMiddleware,
-    // requirePermission("MANAGE_SCHOOL"),
-    deleteChapter
+  "/chapters/:chapter_id",
+  // authMiddleware,
+  // requirePermission("MANAGE_SCHOOL"),
+  deleteChapter
 );
 
 export default router;
