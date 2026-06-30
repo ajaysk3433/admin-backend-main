@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { GoogleGenAI } from "@google/genai";
+import { LLMFactory } from "../interface_imp/factory/LLMFactory.ts";
+import type { Message } from "../interface/strategy/LLMStrategy.ts";
 import { Op } from "sequelize";
 
 import {
@@ -58,26 +58,6 @@ interface EnrichedAttempt {
   percentage: number;
   submitted_at: Date | null | undefined;
   status: string | undefined;
-}
-
-/* ─────────────────────────────────────────
-   AI clients
-───────────────────────────────────────── */
-let openai: OpenAI | undefined;
-try {
-  openai = new OpenAI({
-    baseURL: "",
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-} catch {
-  console.warn("OPENAI_API_KEY missing");
-}
-
-let gemini: InstanceType<typeof GoogleGenAI> | undefined;
-try {
-  gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-} catch {
-  console.warn("GEMINI_API_KEY missing");
 }
 
 /* ─────────────────────────────────────────
@@ -255,34 +235,17 @@ Rules:
 - topic      → ${topic}
 `;
 
-  if (openai) {
-    try {
-      const res = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "Output only a raw JSON array. No markdown, no wrapper object, no explanation.",
-          },
-          { role: "user", content: prompt },
-        ],
-      });
-      const raw = res.choices[0].message.content;
-      console.log("[AI] OpenAI raw (first 300):", raw?.slice(0, 300));
-      return extractArray(raw);
-    } catch (err) {
-      console.warn("[AI] OpenAI failed:", (err as Error).message, "— trying Gemini");
-    }
-  }
-
-  if (!gemini) throw new Error("No AI client available");
-
-  const res = await gemini.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-  });
-  const raw = res.text;
-  console.log("[AI] Gemini raw (first 300):", raw?.slice(0, 300));
+  // ✅ Uses the same Factory + Strategy pattern as the chatbot
+  const llm = LLMFactory.create("openai");
+  const messages: Message[] = [
+    {
+      role: "system",
+      content: "Output only a raw JSON array. No markdown, no wrapper object, no explanation.",
+    },
+    { role: "user", content: prompt },
+  ];
+  const raw = await llm.normalResponse(messages);
+  console.log("[AI] OpenAI raw (first 300):", raw?.slice(0, 300));
   return extractArray(raw);
 }
 

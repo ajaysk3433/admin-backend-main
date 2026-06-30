@@ -1,13 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
+import { LLMFactory } from "../interface_imp/factory/LLMFactory.ts";
+import type { Message } from "../interface/strategy/LLMStrategy.ts";
 
-let ai: GoogleGenAI;
-
-try {
-  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-} catch {
-  console.log("GEMINI_API_KEY is required");
-}
 
 /* ─────────────────────────────────────────────────────────────
    PROMPTS
@@ -83,6 +77,7 @@ interface SummarizeFileInput {
   maxlength?: number;
   filePath: string;
   mimeType: string;
+  originalname?: string;
 }
 
 interface ParsedNotes {
@@ -96,19 +91,17 @@ export class SummarizerService {
 
   async summarizeFile({ language, maxlength, filePath, mimeType }: SummarizeFileInput): Promise<string> {
     try {
-      const file = await ai.files.upload({ file: filePath, config: { mimeType } });
+      const systemPrompt = maxlength
+        ? SUMMARY_PROMPT_MAXLENGTH(language, maxlength)
+        : SUMMARY_PROMPT(language);
 
-      const contents = [
-        { text: maxlength ? SUMMARY_PROMPT_MAXLENGTH(language, maxlength) : SUMMARY_PROMPT(language) },
-        { fileData: { fileUri: file.uri, mimeType } },
+      const messages: Message[] = [
+        { role: "system", content: systemPrompt },
       ];
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents,
-      });
-
-      return (response as any).text;
+      // ✅ Provider reads + extracts the file itself via fileResponse()
+      const llm = LLMFactory.create("openai");
+      return await llm.fileResponse(messages, filePath, mimeType);
     } catch (error: any) {
       console.error("AI Summarization Error:", error.message);
       throw error;
